@@ -2249,6 +2249,14 @@
     prompts "^2.4.2"
     semver "^7.5.2"
 
+"@react-native-tvos/virtualized-lists@0.74.1-0":
+  version "0.74.1-0"
+  resolved "https://registry.npmjs.org/@react-native-tvos/virtualized-lists/-/virtualized-lists-0.74.1-0.tgz"
+  integrity sha512-YmOPOeH6jgd7Ob5ea56A9GSM+9VzO2CBno3EeCphDJSB7hLZX7rVXZI4bGZtPGowfB5Qky/xYfHqDDP4mIYj7A==
+  dependencies:
+    invariant "^2.2.4"
+    nullthrows "^1.1.1"
+
 "@react-native/assets-registry@~0.74.83", "@react-native/assets-registry@0.74.83":
   version "0.74.83"
   resolved "https://registry.npmjs.org/@react-native/assets-registry/-/assets-registry-0.74.83.tgz"
@@ -2571,14 +2579,6 @@
   version "0.74.81"
   resolved "https://registry.npmjs.org/@react-native/typescript-config/-/typescript-config-0.74.81.tgz"
   integrity sha512-jk4LJUKdRYmXxxpebRSW8mK9xJPW90W6BE1IE9LdFi0exdsnVv5gXM9QylG+9kDVZj3bltMuMVdijWnU7SRNbg==
-
-"@react-native/virtualized-lists@0.74.83":
-  version "0.74.83"
-  resolved "https://registry.npmjs.org/@react-native/virtualized-lists/-/virtualized-lists-0.74.83.tgz"
-  integrity sha512-rmaLeE34rj7py4FxTod7iMTC7BAsm+HrGA8WxYmEJeyTV7WSaxAkosKoYBz8038mOiwnG9VwA/7FrB6bEQvn1A==
-  dependencies:
-    invariant "^2.2.4"
-    nullthrows "^1.1.1"
 
 "@react-navigation/bottom-tabs@^6.5.20":
   version "6.5.20"
@@ -8338,6 +8338,13 @@ react-native-bootsplash@^5.5.3:
     ts-dedent "^2.2.0"
     xml-formatter "^3.6.0"
 
+react-native-document-picker@^9.3.0:
+  version "9.3.0"
+  resolved "https://registry.npmjs.org/react-native-document-picker/-/react-native-document-picker-9.3.0.tgz"
+  integrity sha512-X/j0xKn8cObckpHTNwE/hW9WzBiP6oKx820FYu1Nat43QnnHmmT6uozFgAUDcJfxmZGcEdLlbv0lNhnyRXJyyA==
+  dependencies:
+    invariant "^2.2.4"
+
 react-native-element-dropdown@^2.12.0:
   version "2.12.0"
   resolved "https://registry.npmjs.org/react-native-element-dropdown/-/react-native-element-dropdown-2.12.0.tgz"
@@ -8442,22 +8449,22 @@ react-native-webview@13.8.6:
     escape-string-regexp "2.0.0"
     invariant "2.2.4"
 
-react-native@*, "react-native@>= 0.30.0", react-native@>=0.46.0, react-native@>=0.60.0, "react-native@>=0.60.0-rc.0 <1.0.x", react-native@>=0.63.2, react-native@>=0.70.0, react-native@0.74.1:
-  version "0.74.1"
-  resolved "https://registry.npmjs.org/react-native/-/react-native-0.74.1.tgz"
-  integrity sha512-0H2XpmghwOtfPpM2LKqHIN7gxy+7G/r1hwJHKLV6uoyXGC/gCojRtoo5NqyKrWpFC8cqyT6wTYCLuG7CxEKilg==
+react-native@*, "react-native@>= 0.30.0", react-native@>=0.46.0, react-native@>=0.60.0, "react-native@>=0.60.0-rc.0 <1.0.x", react-native@>=0.63.2, react-native@>=0.70.0, "react-native@npm:react-native-tvos@0.74.1-0":
+  version "0.74.1-0"
+  resolved "https://registry.npmjs.org/react-native-tvos/-/react-native-tvos-0.74.1-0.tgz"
+  integrity sha512-W9kKIfHwHz1tOi62u38CbFNE5eal+Io0L7hravu3EuR+P7P7BJprpdRlhnGTYBXGUN93WernUAPAcYsXC/NN0A==
   dependencies:
     "@jest/create-cache-key-function" "^29.6.3"
     "@react-native-community/cli" "13.6.6"
     "@react-native-community/cli-platform-android" "13.6.6"
     "@react-native-community/cli-platform-ios" "13.6.6"
+    "@react-native-tvos/virtualized-lists" "0.74.1-0"
     "@react-native/assets-registry" "0.74.83"
     "@react-native/codegen" "0.74.83"
     "@react-native/community-cli-plugin" "0.74.83"
     "@react-native/gradle-plugin" "0.74.83"
     "@react-native/js-polyfills" "0.74.83"
     "@react-native/normalize-colors" "0.74.83"
-    "@react-native/virtualized-lists" "0.74.83"
     abort-controller "^3.0.0"
     anser "^1.4.9"
     ansi-regex "^5.0.0"
