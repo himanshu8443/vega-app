@@ -32,67 +32,49 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
-      # Updated JDK version from 11 to 17
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
       
-      # Decode keystore directly to the app directory
+      # Create a keystore file - matching exactly the path expected in build.gradle
       - name: Decode keystore
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > $HOME/release.keystore
       
-      # Now we'll directly modify the build.gradle file to reference our keystore
-      - name: Update build.gradle with signing config
-        run: |
-          # Create a temporary file for the modified build.gradle
-          cat android/app/build.gradle | sed '/signingConfigs {/,/}/d' > temp_build.gradle
-          
-          # Insert our signing config block
-          echo 'android {
-              signingConfigs {
-                  release {
-                      storeFile file("release.keystore")
-                      storePassword "${{ secrets.KEYSTORE_PASSWORD }}"
-                      keyAlias "${{ secrets.KEY_ALIAS }}"
-                      keyPassword "${{ secrets.KEY_PASSWORD }}"
-                  }
-              }
-              buildTypes {
-                  release {
-                      signingConfig signingConfigs.release
-                  }
-              }
-          }' | cat - temp_build.gradle > android/app/build.gradle
-      
-      # Add permission to gradlew
+      # Make gradlew executable
       - name: Make gradlew executable
         run: chmod +x android/gradlew
       
-      # Print build.gradle to verify our changes
-      - name: Verify build.gradle changes
-        run: cat android/app/build.gradle
+      # Create properties with EXACT names from your build.gradle
+      - name: Setup gradle.properties with correct property names
+        run: |
+          echo "MYAPP_UPLOAD_STORE_FILE=$HOME/release.keystore" >> android/gradle.properties
+          echo "MYAPP_UPLOAD_KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> android/gradle.properties
+          echo "MYAPP_UPLOAD_STORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> android/gradle.properties
+          echo "MYAPP_UPLOAD_KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> android/gradle.properties
       
       # Build with signing config
       - name: Build Android App
         run: |
           cd android
-          ./gradlew assembleRelease
+          ./gradlew assembleRelease --stacktrace
       
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-          path: android/app/build/outputs/apk/release/app-release.apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: warn
       
-      # Distribution step (example using App Center)
+      # Distribution step
       - name: Upload to App Center
+        if: success()
         uses: wzieba/AppCenter-Github-Action@v1
         with:
           appName: ${{ secrets.APPCENTER_APP_NAME }}
           token: ${{ secrets.APPCENTER_API_TOKEN }}
           group: Testers
-          file: android/app/build/outputs/apk/release/app-release.apk
+          file: android/app/build/outputs/apk/release/Vega-v2.6.8-release.apk
           notifyTesters: true
