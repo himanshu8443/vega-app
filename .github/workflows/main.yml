@@ -16,15 +16,15 @@ jobs:
   build-android:
     runs-on: ubuntu-latest
     # This ensures the workflow only runs on the specified branch for scheduled runs
-    if: github.event_name != 'schedule' || github.ref == 'refs/heads/auto-build'
+    if: github.event_name != 'schedule' || github.ref == 'refs/heads/main'
     steps:
       - name: Checkout specific branch
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.branch || 'main' }}
           
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18.x'
           cache: 'yarn'
@@ -33,7 +33,7 @@ jobs:
         run: yarn install --frozen-lockfile
       
       - name: Set up JDK
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '11'
@@ -58,7 +58,7 @@ jobs:
           ./gradlew assembleRelease
       
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: app-release
           path: android/app/build/outputs/apk/release/app-release.apk
