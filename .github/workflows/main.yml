@@ -38,29 +38,38 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
       
-      # Save keystore directly in the android/app directory
-      - name: Decode keystore
+      # Create a temporary keystore file just for CI builds
+      - name: Generate temporary keystore
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore
+          keytool -genkeypair \
+            -alias app \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -keystore android/app/release.keystore \
+            -storepass temppassword \
+            -keypass temppassword \
+            -dname "CN=Android Debug,O=Android,C=US"
       
       # Make gradlew executable
       - name: Make gradlew executable
         run: chmod +x android/gradlew
       
-      # Set environment variables with direct paths
+      # Setup environment variables
       - name: Setup environment variables
         run: |
           echo "KEYSTORE_FILE=$(pwd)/android/app/release.keystore" >> $GITHUB_ENV
-          echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
-          echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> $GITHUB_ENV
-          echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> $GITHUB_ENV
+          echo "KEYSTORE_PASSWORD=temppassword" >> $GITHUB_ENV
+          echo "KEY_ALIAS=app" >> $GITHUB_ENV
+          echo "KEY_PASSWORD=temppassword" >> $GITHUB_ENV
           echo "CI=true" >> $GITHUB_ENV
       
-      # Print keystore path for debugging
-      - name: Debug keystore path
+      # Debug keystore
+      - name: Verify keystore
         run: |
           echo "Keystore path: $KEYSTORE_FILE"
           ls -la android/app/
+          keytool -list -v -keystore android/app/release.keystore -storepass temppassword
       
       # Build with release configuration
       - name: Build Android App
