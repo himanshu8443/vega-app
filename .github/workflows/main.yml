@@ -38,25 +38,30 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
       
-      # Create a keystore file in the app directory
+      # Create keystore file from secret
       - name: Decode keystore
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > $HOME/release.keystore
       
       # Make gradlew executable
       - name: Make gradlew executable
         run: chmod +x android/gradlew
       
-      # Directly modify the build.gradle file
-      - name: Update build.gradle
+      # Set environment variables for the build
+      - name: Setup environment variables
+        env:
+          KEYSTORE_FILE: $HOME/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          CI: true
         run: |
-          sed -i 's/if (project.hasProperty(.*/storeFile file("release.keystore")\n            storePassword "${{ secrets.KEYSTORE_PASSWORD }}"\n            keyAlias "${{ secrets.KEY_ALIAS }}"\n            keyPassword "${{ secrets.KEY_PASSWORD }}"/' android/app/build.gradle
+          echo "KEYSTORE_FILE=$KEYSTORE_FILE" >> $GITHUB_ENV
+          echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> $GITHUB_ENV
+          echo "KEY_ALIAS=$KEY_ALIAS" >> $GITHUB_ENV
+          echo "KEY_PASSWORD=$KEY_PASSWORD" >> $GITHUB_ENV
       
-      # Let's verify the change
-      - name: Verify build.gradle
-        run: cat android/app/build.gradle | grep -A 10 "signingConfigs {"
-      
-      # Build with signing config
+      # Build with release configuration
       - name: Build Android App
         run: |
           cd android
@@ -69,7 +74,7 @@ jobs:
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
       
-      # Distribution step (adjust path if necessary based on your custom APK naming)
+      # Distribution step
       - name: Upload to App Center
         if: success()
         uses: wzieba/AppCenter-Github-Action@v1
