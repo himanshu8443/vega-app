@@ -51,29 +51,35 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
       
-      # Create local.properties with signing configuration
-      - name: Setup local.properties
+      # Use EXACT property names in gradle.properties and absolute path for keystore
+      - name: Setup gradle properties
         run: |
-          # First create the standard local.properties with SDK path
-          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+          # Use absolute path to ensure the keystore is found
+          KEYSTORE_PATH=$(realpath android/app/release.keystore)
           
-          # Add the signing configuration properties
-          echo "MYAPP_UPLOAD_STORE_FILE=release.keystore" >> android/local.properties
-          echo "MYAPP_UPLOAD_KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> android/local.properties
-          echo "MYAPP_UPLOAD_STORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> android/local.properties
-          echo "MYAPP_UPLOAD_KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> android/local.properties
+          # Append to existing gradle.properties file (don't overwrite it)
+          echo "MYAPP_UPLOAD_STORE_FILE=$KEYSTORE_PATH" >> android/gradle.properties
+          echo "MYAPP_UPLOAD_KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> android/gradle.properties
+          echo "MYAPP_UPLOAD_STORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> android/gradle.properties
+          echo "MYAPP_UPLOAD_KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> android/gradle.properties
       
-      # Show the content of local.properties for debugging (hide sensitive values)
-      - name: Verify local.properties
+      # Show the content of gradle.properties for debugging
+      - name: Verify gradle.properties
         run: |
-          echo "Content of local.properties (with secrets redacted):"
-          cat android/local.properties | sed 's/\(password\|PASSWORD\)=.*/\1=****/'
+          echo "Content of gradle.properties (with secrets redacted):"
+          cat android/gradle.properties | sed 's/\(password\|PASSWORD\)=.*/\1=****/'
       
-      # Build with release configuration
+      # Verify the keystore
+      - name: Verify keystore
+        run: |
+          echo "Keystore details:"
+          keytool -list -v -keystore android/app/release.keystore -storepass "${{ secrets.KEYSTORE_PASSWORD }}" | head -20
+      
+      # Build with release configuration and verbose logging
       - name: Build Android App
         run: |
           cd android
-          ./gradlew assembleRelease --info
+          ./gradlew assembleRelease --stacktrace --debug
       
       # Upload APK as artifact for download with date in name
       - name: Upload APK artifact
