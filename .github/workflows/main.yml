@@ -143,7 +143,7 @@ jobs:
       # Upload APKs to Appwrite storage
       - name: Upload APKs to Appwrite
         run: |
-          # Configure Appwrite CLI with kebab-case parameters (fixed)
+          # Configure Appwrite CLI with kebab-case parameters
           appwrite client --endpoint "${{ secrets.APPWRITE_ENDPOINT }}" --project-id "${{ secrets.APPWRITE_PROJECT_ID }}" --key "${{ secrets.APPWRITE_API_KEY }}"
           
           # Function to upload file and extract file ID
@@ -153,8 +153,8 @@ jobs:
             
             echo "Uploading $FILE_NAME to Appwrite bucket ${{ secrets.APPWRITE_BUCKET_ID }}..."
             
-            # Upload file and extract file ID from JSON response (with kebab-case parameters)
-            RESPONSE=$(appwrite storage createFile \
+            # Upload file with kebab-case command and parameters
+            RESPONSE=$(appwrite storage create-file \
               --bucket-id "${{ secrets.APPWRITE_BUCKET_ID }}" \
               --file-id "unique()" \
               --file "$FILE_PATH" \
@@ -169,7 +169,10 @@ jobs:
               
               # Generate download URL
               DOWNLOAD_URL="${{ secrets.APPWRITE_ENDPOINT }}/storage/buckets/${{ secrets.APPWRITE_BUCKET_ID }}/files/$FILE_ID/download"
-              echo "$FILE_NAME=$DOWNLOAD_URL" >> $GITHUB_ENV
+              
+              # Create a variable with a unique name for each file
+              CLEAN_NAME=$(echo "$FILE_NAME" | sed 's/[^a-zA-Z0-9]/_/g')
+              echo "${CLEAN_NAME}_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
               
               # Create a simpler variable name for the Discord notification
               if [[ "$FILE_NAME" == *"universal"* ]]; then
