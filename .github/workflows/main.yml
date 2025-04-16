@@ -128,7 +128,7 @@ jobs:
           path: artifacts/*.apk
           if-no-files-found: warn
       
-      # Send Discord notification with commit info and download links
+      # Send Discord notification with fixed approach
       - name: Send Discord notification
         if: success()
         env:
@@ -146,53 +146,16 @@ jobs:
           # Commit URL
           COMMIT_URL="${REPO_URL}/commit/${GITHUB_SHA}"
           
-          # Create Discord message content
-          read -r -d '' DISCORD_MESSAGE << EOM
-          {
-            "embeds": [
-              {
-                "title": "🌙 Vega Nightly Build v${{ env.APP_VERSION }}",
-                "description": "A new nightly build of **Vega App** is ready for testing!",
-                "color": 3447003,
-                "fields": [
-                  {
-                    "name": "Version",
-                    "value": "v${{ env.APP_VERSION }} (Build #${GITHUB_RUN_NUMBER})",
-                    "inline": true
-                  },
-                  {
-                    "name": "Build Date",
-                    "value": "${{ env.BUILD_DATE }} UTC",
-                    "inline": true
-                  },
-                  {
-                    "name": "Latest Commit",
-                    "value": "[${COMMIT_HASH}](${COMMIT_URL}) by ${COMMIT_AUTHOR}",
-                    "inline": false
-                  },
-                  {
-                    "name": "Commit Message",
-                    "value": "$(echo "$COMMIT_MSG" | head -n 1 | sed 's/"/\\"/g')",
-                    "inline": false
-                  },
-                  {
-                    "name": "Download APKs",
-                    "value": "[▶️ **Download All APKs**](${ARTIFACTS_URL})\n\n• [📱 Universal APK](${ARTIFACTS_URL})\n• [📱 ARMv7 APK](${ARTIFACTS_URL})\n• [📱 ARMv8 APK](${ARTIFACTS_URL})",
-                    "inline": false
-                  }
-                ],
-                "footer": {
-                  "text": "Built by himanshu8443 • Vega App"
-                },
-                "timestamp": "$(date -u --iso-8601=seconds)"
-              }
-            ]
-          }
-          EOM
+          # Create a simplified Discord message
+          COMMIT_MSG_ESCAPED=$(echo "$COMMIT_MSG" | head -n 1 | sed 's/"/\\"/g')
+          TIMESTAMP=$(date -u --iso-8601=seconds)
+          
+          # Create JSON payload directly without heredoc
+          JSON_PAYLOAD="{\"embeds\":[{\"title\":\"🌙 Vega Nightly Build v$APP_VERSION\",\"description\":\"A new nightly build of **Vega App** is ready for testing!\",\"color\":3447003,\"fields\":[{\"name\":\"Version\",\"value\":\"v$APP_VERSION (Build #$GITHUB_RUN_NUMBER)\",\"inline\":true},{\"name\":\"Build Date\",\"value\":\"$BUILD_DATE UTC\",\"inline\":true},{\"name\":\"Latest Commit\",\"value\":\"[$COMMIT_HASH]($COMMIT_URL) by $COMMIT_AUTHOR\",\"inline\":false},{\"name\":\"Commit Message\",\"value\":\"$COMMIT_MSG_ESCAPED\",\"inline\":false},{\"name\":\"Download APKs\",\"value\":\"[▶️ **Download All APKs**]($ARTIFACTS_URL)\\n\\n• [📱 Universal APK]($ARTIFACTS_URL)\\n• [📱 ARMv7 APK]($ARTIFACTS_URL)\\n• [📱 ARMv8 APK]($ARTIFACTS_URL)\",\"inline\":false}],\"footer\":{\"text\":\"Built by himanshu8443 • Vega App\"},\"timestamp\":\"$TIMESTAMP\"}]}"
           
           # Send the message to Discord webhook
           if [ -n "${DISCORD_WEBHOOK}" ]; then
-            curl -H "Content-Type: application/json" -d "${DISCORD_MESSAGE}" "${DISCORD_WEBHOOK}"
+            curl -H "Content-Type: application/json" -d "$JSON_PAYLOAD" "${DISCORD_WEBHOOK}"
             echo "Discord notification sent successfully"
           else
             echo "Discord webhook URL not set, skipping notification"
