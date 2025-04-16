@@ -143,8 +143,8 @@ jobs:
       # Upload APKs to Appwrite storage
       - name: Upload APKs to Appwrite
         run: |
-          # Configure Appwrite CLI
-          appwrite client --endpoint "${{ secrets.APPWRITE_ENDPOINT }}" --projectId "${{ secrets.APPWRITE_PROJECT_ID }}" --key "${{ secrets.APPWRITE_API_KEY }}"
+          # Configure Appwrite CLI with kebab-case parameters (fixed)
+          appwrite client --endpoint "${{ secrets.APPWRITE_ENDPOINT }}" --project-id "${{ secrets.APPWRITE_PROJECT_ID }}" --key "${{ secrets.APPWRITE_API_KEY }}"
           
           # Function to upload file and extract file ID
           upload_to_appwrite() {
@@ -153,10 +153,10 @@ jobs:
             
             echo "Uploading $FILE_NAME to Appwrite bucket ${{ secrets.APPWRITE_BUCKET_ID }}..."
             
-            # Upload file and extract file ID from JSON response
+            # Upload file and extract file ID from JSON response (with kebab-case parameters)
             RESPONSE=$(appwrite storage createFile \
-              --bucketId "${{ secrets.APPWRITE_BUCKET_ID }}" \
-              --fileId "unique()" \
+              --bucket-id "${{ secrets.APPWRITE_BUCKET_ID }}" \
+              --file-id "unique()" \
               --file "$FILE_PATH" \
               --permissions '["read:any"]' \
               --output json)
