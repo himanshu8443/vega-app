@@ -51,40 +51,41 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
       
-      # Use EXACT property names in gradle.properties and absolute path for keystore
-      - name: Setup gradle properties
+      # Create key.properties file in the android directory
+      - name: Create key.properties file
         run: |
-          # Use absolute path to ensure the keystore is found
-          KEYSTORE_PATH=$(realpath android/app/release.keystore)
+          cat > android/key.properties << EOF
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          storeFile=../app/release.keystore
+          EOF
           
-          # Append to existing gradle.properties file (don't overwrite it)
-          echo "MYAPP_UPLOAD_STORE_FILE=$KEYSTORE_PATH" >> android/gradle.properties
-          echo "MYAPP_UPLOAD_KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> android/gradle.properties
-          echo "MYAPP_UPLOAD_STORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> android/gradle.properties
-          echo "MYAPP_UPLOAD_KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> android/gradle.properties
+          # Verify the file was created
+          echo "key.properties created:"
+          cat android/key.properties | sed 's/\(password\|Password\)=.*/\1=****/'
       
-      # Show the content of gradle.properties for debugging
-      - name: Verify gradle.properties
-        run: |
-          echo "Content of gradle.properties (with secrets redacted):"
-          cat android/gradle.properties | sed 's/\(password\|PASSWORD\)=.*/\1=****/'
-      
-      # Verify the keystore
+      # Verify the keystore is valid
       - name: Verify keystore
         run: |
-          echo "Keystore details:"
           keytool -list -v -keystore android/app/release.keystore -storepass "${{ secrets.KEYSTORE_PASSWORD }}" | head -20
       
-      # Build with release configuration and stacktrace only (no debug)
+      # Print current date and time for the build record
+      - name: Record build time
+        run: |
+          echo "Build started at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Builder: ${{ github.actor }}"
+      
+      # Build with release configuration
       - name: Build Android App
         run: |
           cd android
           ./gradlew assembleRelease --stacktrace
       
-      # Upload APK as artifact for download with date in name
+      # Upload APK as artifact for download with timestamp
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Vega-Release-APK-$(date +'%Y%m%d')
+          name: Vega-Release-APK-$(date +'%Y%m%d-%H%M')
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
