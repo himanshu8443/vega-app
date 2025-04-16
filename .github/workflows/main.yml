@@ -143,7 +143,7 @@ jobs:
       # Upload APKs to Appwrite storage
       - name: Upload APKs to Appwrite
         run: |
-          # Configure Appwrite CLI with kebab-case parameters
+          # Configure Appwrite CLI with correct parameters
           appwrite client --endpoint "${{ secrets.APPWRITE_ENDPOINT }}" --project-id "${{ secrets.APPWRITE_PROJECT_ID }}" --key "${{ secrets.APPWRITE_API_KEY }}"
           
           # Function to upload file and extract file ID
@@ -153,39 +153,43 @@ jobs:
             
             echo "Uploading $FILE_NAME to Appwrite bucket ${{ secrets.APPWRITE_BUCKET_ID }}..."
             
-            # Upload file with kebab-case command and parameters
+            # Upload file with correct command based on the docs (removed --output parameter)
             RESPONSE=$(appwrite storage create-file \
               --bucket-id "${{ secrets.APPWRITE_BUCKET_ID }}" \
               --file-id "unique()" \
               --file "$FILE_PATH" \
-              --permissions '["read:any"]' \
-              --output json)
+              --permissions '["read:any"]')
             
-            # Extract file ID
-            FILE_ID=$(echo "$RESPONSE" | grep -o '"$id":"[^"]*"' | cut -d':' -f2 | tr -d '"')
-            
-            if [ -n "$FILE_ID" ]; then
-              echo "Uploaded $FILE_NAME with ID: $FILE_ID"
+            # Extract file ID from the response
+            # First check if the response contains an ID pattern
+            if echo "$RESPONSE" | grep -q '"$id":'; then
+              # Extract file ID
+              FILE_ID=$(echo "$RESPONSE" | grep -o '"$id":"[^"]*"' | cut -d':' -f2 | tr -d '"')
               
-              # Generate download URL
-              DOWNLOAD_URL="${{ secrets.APPWRITE_ENDPOINT }}/storage/buckets/${{ secrets.APPWRITE_BUCKET_ID }}/files/$FILE_ID/download"
-              
-              # Create a variable with a unique name for each file
-              CLEAN_NAME=$(echo "$FILE_NAME" | sed 's/[^a-zA-Z0-9]/_/g')
-              echo "${CLEAN_NAME}_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
-              
-              # Create a simpler variable name for the Discord notification
-              if [[ "$FILE_NAME" == *"universal"* ]]; then
-                echo "UNIVERSAL_DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
-              elif [[ "$FILE_NAME" == *"armv7"* ]]; then
-                echo "ARMV7_DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
-              elif [[ "$FILE_NAME" == *"armv8"* ]]; then
-                echo "ARMV8_DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
+              if [ -n "$FILE_ID" ]; then
+                echo "Uploaded $FILE_NAME with ID: $FILE_ID"
+                
+                # Generate download URL
+                DOWNLOAD_URL="${{ secrets.APPWRITE_ENDPOINT }}/storage/buckets/${{ secrets.APPWRITE_BUCKET_ID }}/files/$FILE_ID/download"
+                
+                # Create a variable with a unique name for each file
+                CLEAN_NAME=$(echo "$FILE_NAME" | sed 's/[^a-zA-Z0-9]/_/g')
+                echo "${CLEAN_NAME}_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
+                
+                # Create a simpler variable name for the Discord notification
+                if [[ "$FILE_NAME" == *"universal"* ]]; then
+                  echo "UNIVERSAL_DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
+                elif [[ "$FILE_NAME" == *"armv7"* ]]; then
+                  echo "ARMV7_DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
+                elif [[ "$FILE_NAME" == *"armv8"* ]]; then
+                  echo "ARMV8_DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
+                fi
+                return 0
               fi
-            else
-              echo "Failed to upload $FILE_NAME to Appwrite"
-              return 1
             fi
+            
+            echo "Failed to upload $FILE_NAME to Appwrite. Response: $RESPONSE"
+            return 1
           }
           
           # Upload each APK type if it exists
