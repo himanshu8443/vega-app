@@ -51,20 +51,6 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
       
-      # Create key.properties file in the android directory
-      - name: Create key.properties file
-        run: |
-          cat > android/key.properties << EOF
-          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword=${{ secrets.KEY_PASSWORD }}
-          keyAlias=${{ secrets.KEY_ALIAS }}
-          storeFile=../app/release.keystore
-          EOF
-          
-          # Verify the file was created
-          echo "key.properties created:"
-          cat android/key.properties | sed 's/\(password\|Password\)=.*/\1=****/'
-      
       # Verify the keystore is valid
       - name: Verify keystore
         run: |
@@ -74,18 +60,24 @@ jobs:
       - name: Record build time
         run: |
           echo "Build started at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "Builder: ${{ github.actor }}"
+          echo "Builder: $GITHUB_ACTOR"
       
-      # Build with release configuration
-      - name: Build Android App
+      # Build with direct command line parameters for signing
+      - name: Build Android App with Direct Signing Parameters
         run: |
           cd android
-          ./gradlew assembleRelease --stacktrace
+          KEYSTORE_PATH=$(realpath app/release.keystore)
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=$KEYSTORE_PATH \
+            -Pandroid.injected.signing.store.password="${{ secrets.KEYSTORE_PASSWORD }}" \
+            -Pandroid.injected.signing.key.alias="${{ secrets.KEY_ALIAS }}" \
+            -Pandroid.injected.signing.key.password="${{ secrets.KEY_PASSWORD }}" \
+            --stacktrace
       
-      # Upload APK as artifact for download with timestamp
+      # Upload APK as artifact for download with timestamp (himanshu8443's format)
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Vega-Release-APK-$(date +'%Y%m%d-%H%M')
+          name: Vega-Release-APK-$(date +'%Y-%m-%d_%H-%M')
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
