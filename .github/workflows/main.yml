@@ -69,22 +69,17 @@ jobs:
           echo "Build started at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
           echo "Builder: himanshu8443"
       
-      # Add the properties to gradle.properties (using your existing property names)
-      - name: Configure gradle properties
-        run: |
-          echo "MYAPP_UPLOAD_STORE_FILE=release.keystore" >> android/gradle.properties
-          echo "MYAPP_UPLOAD_KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> android/gradle.properties
-          echo "MYAPP_UPLOAD_STORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> android/gradle.properties
-          echo "MYAPP_UPLOAD_KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> android/gradle.properties
-          
-          # Verify properties were added (redacting passwords)
-          cat android/gradle.properties | grep -v PASSWORD | grep -v password
-      
-      # Build the APKs with your existing split configuration
-      - name: Build Release APKs
+      # Build the APKs with DIRECT SIGNING PARAMETERS as requested
+      - name: Build Android App with Direct Signing Parameters
         run: |
           cd android
-          ./gradlew assembleRelease --stacktrace
+          KEYSTORE_PATH=$(realpath app/release.keystore)
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=$KEYSTORE_PATH \
+            -Pandroid.injected.signing.store.password="${{ secrets.KEYSTORE_PASSWORD }}" \
+            -Pandroid.injected.signing.key.alias="${{ secrets.KEY_ALIAS }}" \
+            -Pandroid.injected.signing.key.password="${{ secrets.KEY_PASSWORD }}" \
+            --stacktrace
       
       # Find and identify the APKs
       - name: Identify APKs
