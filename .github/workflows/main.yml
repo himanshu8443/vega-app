@@ -128,35 +128,79 @@ jobs:
           path: artifacts/*.apk
           if-no-files-found: warn
       
-      # Send Discord notification with fixed approach
-      - name: Send Discord notification
-        if: success()
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+      # Create and run a dedicated Discord notification script
+      - name: Create Discord notification script
         run: |
-          # Repository URL for linking to commit
+          cat > send_discord.sh << 'EOF'
+          #!/bin/bash
+
+          # Get environment variables
           REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
-          
-          # GitHub Actions URL for the specific run
           WORKFLOW_URL="${REPO_URL}/actions/runs/${GITHUB_RUN_ID}"
-          
-          # Artifacts URL
           ARTIFACTS_URL="${WORKFLOW_URL}/artifacts"
-          
-          # Commit URL
           COMMIT_URL="${REPO_URL}/commit/${GITHUB_SHA}"
-          
-          # Create a simplified Discord message
-          COMMIT_MSG_ESCAPED=$(echo "$COMMIT_MSG" | head -n 1 | sed 's/"/\\"/g')
-          TIMESTAMP=$(date -u --iso-8601=seconds)
-          
-          # Create JSON payload directly without heredoc
-          JSON_PAYLOAD="{\"embeds\":[{\"title\":\"🌙 Vega Nightly Build v$APP_VERSION\",\"description\":\"A new nightly build of **Vega App** is ready for testing!\",\"color\":3447003,\"fields\":[{\"name\":\"Version\",\"value\":\"v$APP_VERSION (Build #$GITHUB_RUN_NUMBER)\",\"inline\":true},{\"name\":\"Build Date\",\"value\":\"$BUILD_DATE UTC\",\"inline\":true},{\"name\":\"Latest Commit\",\"value\":\"[$COMMIT_HASH]($COMMIT_URL) by $COMMIT_AUTHOR\",\"inline\":false},{\"name\":\"Commit Message\",\"value\":\"$COMMIT_MSG_ESCAPED\",\"inline\":false},{\"name\":\"Download APKs\",\"value\":\"[▶️ **Download All APKs**]($ARTIFACTS_URL)\\n\\n• [📱 Universal APK]($ARTIFACTS_URL)\\n• [📱 ARMv7 APK]($ARTIFACTS_URL)\\n• [📱 ARMv8 APK]($ARTIFACTS_URL)\",\"inline\":false}],\"footer\":{\"text\":\"Built by himanshu8443 • Vega App\"},\"timestamp\":\"$TIMESTAMP\"}]}"
-          
-          # Send the message to Discord webhook
+
+          # Format the commit message (escape quotes for JSON)
+          FORMATTED_COMMIT_MSG=$(echo "$COMMIT_MSG" | head -n 1 | sed 's/"/\\"/g')
+          CURRENT_TIMESTAMP=$(date -u --iso-8601=seconds)
+
+          # Create the JSON payload
+          cat > discord_payload.json << EOJSON
+          {
+            "embeds": [
+              {
+                "title": "🌙 Vega Nightly Build v${APP_VERSION}",
+                "description": "A new nightly build of **Vega App** is ready for testing!",
+                "color": 3447003,
+                "fields": [
+                  {
+                    "name": "Version",
+                    "value": "v${APP_VERSION} (Build #${GITHUB_RUN_NUMBER})",
+                    "inline": true
+                  },
+                  {
+                    "name": "Build Date",
+                    "value": "${BUILD_DATE} UTC",
+                    "inline": true
+                  },
+                  {
+                    "name": "Latest Commit",
+                    "value": "[${COMMIT_HASH}](${COMMIT_URL}) by ${COMMIT_AUTHOR}",
+                    "inline": false
+                  },
+                  {
+                    "name": "Commit Message",
+                    "value": "${FORMATTED_COMMIT_MSG}",
+                    "inline": false
+                  },
+                  {
+                    "name": "Download APKs",
+                    "value": "[▶️ **Download All APKs**](${ARTIFACTS_URL})\n\n• [📱 Universal APK](${ARTIFACTS_URL})\n• [📱 ARMv7 APK](${ARTIFACTS_URL})\n• [📱 ARMv8 APK](${ARTIFACTS_URL})",
+                    "inline": false
+                  }
+                ],
+                "footer": {
+                  "text": "Built by himanshu8443 • Vega App"
+                },
+                "timestamp": "${CURRENT_TIMESTAMP}"
+              }
+            ]
+          }
+          EOJSON
+
+          # Send to Discord
           if [ -n "${DISCORD_WEBHOOK}" ]; then
-            curl -H "Content-Type: application/json" -d "$JSON_PAYLOAD" "${DISCORD_WEBHOOK}"
+            curl -H "Content-Type: application/json" -d @discord_payload.json "${DISCORD_WEBHOOK}"
             echo "Discord notification sent successfully"
           else
             echo "Discord webhook URL not set, skipping notification"
           fi
+          EOF
+
+          chmod +x send_discord.sh
+          
+      - name: Send Discord notification
+        if: success()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: ./send_discord.sh
