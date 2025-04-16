@@ -88,8 +88,8 @@ jobs:
           VERSION=$(grep -m 1 "versionName " android/app/build.gradle | sed 's/.*versionName "\(.*\)".*/\1/')
           echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
           
-          # Create directories for each APK type
-          mkdir -p universal armv7 armv8
+          # Create APKs directory
+          mkdir -p apks
           
           # Find all APKs and log them
           echo "Finding APKs:"
@@ -100,9 +100,11 @@ jobs:
           ARMV7_APK=$(find android/app/build/outputs/apk/release -name "*armeabi-v7a*.apk" -not -name "*unsigned*" | head -1)
           ARMV8_APK=$(find android/app/build/outputs/apk/release -name "*arm64-v8a*.apk" -not -name "*unsigned*" | head -1)
           
+          # Set the file paths with clean names
           if [ -f "$UNIVERSAL_APK" ]; then
-            cp "$UNIVERSAL_APK" universal/Vega-v${VERSION}-universal-${{ env.BUILD_DATE }}.apk
-            echo "UNIVERSAL_APK_NAME=Vega-v${VERSION}-universal-${{ env.BUILD_DATE }}.apk" >> $GITHUB_ENV
+            UNIVERSAL_APK_NAME="Vega-v${VERSION}-universal-${BUILD_DATE}.apk"
+            cp "$UNIVERSAL_APK" "apks/${UNIVERSAL_APK_NAME}"
+            echo "UNIVERSAL_APK_NAME=${UNIVERSAL_APK_NAME}" >> $GITHUB_ENV
             echo "UNIVERSAL_APK_FOUND=true" >> $GITHUB_ENV
           else
             echo "Universal APK not found"
@@ -110,8 +112,9 @@ jobs:
           fi
           
           if [ -f "$ARMV7_APK" ]; then
-            cp "$ARMV7_APK" armv7/Vega-v${VERSION}-armv7-${{ env.BUILD_DATE }}.apk
-            echo "ARMV7_APK_NAME=Vega-v${VERSION}-armv7-${{ env.BUILD_DATE }}.apk" >> $GITHUB_ENV
+            ARMV7_APK_NAME="Vega-v${VERSION}-armv7-${BUILD_DATE}.apk"
+            cp "$ARMV7_APK" "apks/${ARMV7_APK_NAME}"
+            echo "ARMV7_APK_NAME=${ARMV7_APK_NAME}" >> $GITHUB_ENV
             echo "ARMV7_APK_FOUND=true" >> $GITHUB_ENV
           else
             echo "ARMv7 APK not found"
@@ -119,42 +122,91 @@ jobs:
           fi
           
           if [ -f "$ARMV8_APK" ]; then
-            cp "$ARMV8_APK" armv8/Vega-v${VERSION}-armv8-${{ env.BUILD_DATE }}.apk
-            echo "ARMV8_APK_NAME=Vega-v${VERSION}-armv8-${{ env.BUILD_DATE }}.apk" >> $GITHUB_ENV
+            ARMV8_APK_NAME="Vega-v${VERSION}-armv8-${BUILD_DATE}.apk"
+            cp "$ARMV8_APK" "apks/${ARMV8_APK_NAME}"
+            echo "ARMV8_APK_NAME=${ARMV8_APK_NAME}" >> $GITHUB_ENV
             echo "ARMV8_APK_FOUND=true" >> $GITHUB_ENV
           else
             echo "ARMv8 APK not found"
             echo "ARMV8_APK_FOUND=false" >> $GITHUB_ENV
           fi
+          
+          echo "APKs prepared for upload:"
+          ls -la apks/
       
-      # Upload Universal APK as separate artifact
-      - name: Upload Universal APK artifact
-        if: env.UNIVERSAL_APK_FOUND == 'true'
+      # Install Appwrite CLI
+      - name: Install Appwrite CLI
+        run: |
+          curl -sL https://appwrite.io/cli/install.sh | bash
+          appwrite --version
+      
+      # Upload APKs to Appwrite storage
+      - name: Upload APKs to Appwrite
+        run: |
+          # Configure Appwrite CLI
+          appwrite client --endpoint "${{ secrets.APPWRITE_ENDPOINT }}" --projectId "${{ secrets.APPWRITE_PROJECT_ID }}" --key "${{ secrets.APPWRITE_API_KEY }}"
+          
+          # Function to upload file and extract file ID
+          upload_to_appwrite() {
+            local FILE_PATH=$1
+            local FILE_NAME=$(basename "$FILE_PATH")
+            
+            echo "Uploading $FILE_NAME to Appwrite bucket ${{ secrets.APPWRITE_BUCKET_ID }}..."
+            
+            # Upload file and extract file ID from JSON response
+            RESPONSE=$(appwrite storage createFile \
+              --bucketId "${{ secrets.APPWRITE_BUCKET_ID }}" \
+              --fileId "unique()" \
+              --file "$FILE_PATH" \
+              --permissions '["read:any"]' \
+              --output json)
+            
+            # Extract file ID
+            FILE_ID=$(echo "$RESPONSE" | grep -o '"$id":"[^"]*"' | cut -d':' -f2 | tr -d '"')
+            
+            if [ -n "$FILE_ID" ]; then
+              echo "Uploaded $FILE_NAME with ID: $FILE_ID"
+              
+              # Generate download URL
+              DOWNLOAD_URL="${{ secrets.APPWRITE_ENDPOINT }}/storage/buckets/${{ secrets.APPWRITE_BUCKET_ID }}/files/$FILE_ID/download"
+              echo "$FILE_NAME=$DOWNLOAD_URL" >> $GITHUB_ENV
+              
+              # Create a simpler variable name for the Discord notification
+              if [[ "$FILE_NAME" == *"universal"* ]]; then
+                echo "UNIVERSAL_DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
+              elif [[ "$FILE_NAME" == *"armv7"* ]]; then
+                echo "ARMV7_DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
+              elif [[ "$FILE_NAME" == *"armv8"* ]]; then
+                echo "ARMV8_DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
+              fi
+            else
+              echo "Failed to upload $FILE_NAME to Appwrite"
+              return 1
+            fi
+          }
+          
+          # Upload each APK type if it exists
+          if [ "$UNIVERSAL_APK_FOUND" = "true" ]; then
+            upload_to_appwrite "apks/$UNIVERSAL_APK_NAME"
+          fi
+          
+          if [ "$ARMV7_APK_FOUND" = "true" ]; then
+            upload_to_appwrite "apks/$ARMV7_APK_NAME"
+          fi
+          
+          if [ "$ARMV8_APK_FOUND" = "true" ]; then
+            upload_to_appwrite "apks/$ARMV8_APK_NAME"
+          fi
+      
+      # Also upload APKs as GitHub artifacts as backup
+      - name: Upload APKs as GitHub artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Vega-v${{ env.APP_VERSION }}-Universal-${{ env.BUILD_DATE }}
-          path: universal/*.apk
+          name: Vega-v${{ env.APP_VERSION }}-APKs-${{ env.BUILD_DATE }}
+          path: apks/*.apk
           if-no-files-found: warn
       
-      # Upload ARMv7 APK as separate artifact
-      - name: Upload ARMv7 APK artifact
-        if: env.ARMV7_APK_FOUND == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: Vega-v${{ env.APP_VERSION }}-ARMv7-${{ env.BUILD_DATE }}
-          path: armv7/*.apk
-          if-no-files-found: warn
-      
-      # Upload ARMv8 APK as separate artifact
-      - name: Upload ARMv8 APK artifact
-        if: env.ARMV8_APK_FOUND == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: Vega-v${{ env.APP_VERSION }}-ARMv8-${{ env.BUILD_DATE }}
-          path: armv8/*.apk
-          if-no-files-found: warn
-      
-      # Create and run a dedicated Discord notification script
+      # Create and run a dedicated Discord notification script with direct download links
       - name: Create Discord notification script
         run: |
           cat > send_discord.sh << 'EOF'
@@ -163,12 +215,31 @@ jobs:
           # Get environment variables
           REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
           WORKFLOW_URL="${REPO_URL}/actions/runs/${GITHUB_RUN_ID}"
-          ARTIFACTS_URL="${WORKFLOW_URL}/artifacts"
           COMMIT_URL="${REPO_URL}/commit/${GITHUB_SHA}"
 
           # Format the commit message (escape quotes for JSON)
           FORMATTED_COMMIT_MSG=$(echo "$COMMIT_MSG" | head -n 1 | sed 's/"/\\"/g')
           CURRENT_TIMESTAMP=$(date -u --iso-8601=seconds)
+
+          # Check which download links are available and build the download section
+          DOWNLOAD_SECTION=""
+          
+          if [ -n "$UNIVERSAL_DOWNLOAD_URL" ]; then
+            DOWNLOAD_SECTION="${DOWNLOAD_SECTION}• [📱 **Universal APK**](${UNIVERSAL_DOWNLOAD_URL}) - Works on all devices\n"
+          fi
+          
+          if [ -n "$ARMV7_DOWNLOAD_URL" ]; then
+            DOWNLOAD_SECTION="${DOWNLOAD_SECTION}• [📱 **ARMv7 APK**](${ARMV7_DOWNLOAD_URL}) - For older Android devices\n"
+          fi
+          
+          if [ -n "$ARMV8_DOWNLOAD_URL" ]; then
+            DOWNLOAD_SECTION="${DOWNLOAD_SECTION}• [📱 **ARMv8 APK**](${ARMV8_DOWNLOAD_URL}) - For newer Android devices (recommended)\n"
+          fi
+          
+          # If no download links available, use a fallback message
+          if [ -z "$DOWNLOAD_SECTION" ]; then
+            DOWNLOAD_SECTION="No download links available. Please check the [workflow run](${WORKFLOW_URL}) for more information."
+          fi
 
           # Create the JSON payload
           cat > discord_payload.json << EOJSON
@@ -200,13 +271,13 @@ jobs:
                     "inline": false
                   },
                   {
-                    "name": "Download APKs",
-                    "value": "Click the links below to download. Each link will download a ZIP file containing the APK.\n\n[📱 **Universal APK**](${ARTIFACTS_URL}?name=Vega-v${APP_VERSION}-Universal-${BUILD_DATE})\n[📱 **ARMv7 APK**](${ARTIFACTS_URL}?name=Vega-v${APP_VERSION}-ARMv7-${BUILD_DATE}) (For older devices)\n[📱 **ARMv8 APK**](${ARTIFACTS_URL}?name=Vega-v${APP_VERSION}-ARMv8-${BUILD_DATE}) (For newer devices)",
+                    "name": "Download APKs (Direct Links)",
+                    "value": "${DOWNLOAD_SECTION}",
                     "inline": false
                   },
                   {
-                    "name": "Installation Instructions",
-                    "value": "1. Download the appropriate APK ZIP file for your device\n2. Extract the ZIP file to get the APK\n3. Install the APK on your device",
+                    "name": "Which APK should I download?",
+                    "value": "• **Universal**: If you're not sure about your device\n• **ARMv8**: For phones from the last ~5 years (smaller file size)\n• **ARMv7**: For very old devices only",
                     "inline": false
                   }
                 ],
