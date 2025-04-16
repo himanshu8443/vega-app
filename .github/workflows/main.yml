@@ -51,77 +51,34 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
       
-      # Create a keystore.properties file in the android directory
-      - name: Create keystore.properties
+      # Create local.properties with signing configuration
+      - name: Setup local.properties
         run: |
-          cat > android/keystore.properties << EOF
-          storeFile=release.keystore
-          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-          keyAlias=${{ secrets.KEY_ALIAS }}
-          keyPassword=${{ secrets.KEY_PASSWORD }}
-          EOF
+          # First create the standard local.properties with SDK path
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
           
-      # Modify build.gradle to ensure it uses our release.keystore
-      - name: Update build.gradle for CI
-        run: |
-          # Back up the original file
-          cp android/app/build.gradle android/app/build.gradle.bak
-          
-          # Replace the signingConfigs section to prioritize our CI setup
-          sed -i '/signingConfigs {/,/}/c\
-          signingConfigs {\
-              release {\
-                  def keystorePropertiesFile = rootProject.file("keystore.properties")\
-                  if (keystorePropertiesFile.exists()) {\
-                      def keystoreProperties = new Properties()\
-                      keystoreProperties.load(new FileInputStream(keystorePropertiesFile))\
-                      storeFile file(keystoreProperties.getProperty("storeFile"))\
-                      storePassword keystoreProperties.getProperty("storePassword")\
-                      keyAlias keystoreProperties.getProperty("keyAlias")\
-                      keyPassword keystoreProperties.getProperty("keyPassword")\
-                  }\
-              }\
-              debug {\
-                  storeFile file("debug.keystore")\
-                  storePassword "android"\
-                  keyAlias "androiddebugkey"\
-                  keyPassword "android"\
-              }\
-          }' android/app/build.gradle
-          
-      # Verify the build.gradle changes
-      - name: Verify build.gradle changes
-        run: cat android/app/build.gradle | grep -A 15 "signingConfigs"
+          # Add the signing configuration properties
+          echo "MYAPP_UPLOAD_STORE_FILE=release.keystore" >> android/local.properties
+          echo "MYAPP_UPLOAD_KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> android/local.properties
+          echo "MYAPP_UPLOAD_STORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> android/local.properties
+          echo "MYAPP_UPLOAD_KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> android/local.properties
       
-      # Build with release configuration 
+      # Show the content of local.properties for debugging (hide sensitive values)
+      - name: Verify local.properties
+        run: |
+          echo "Content of local.properties (with secrets redacted):"
+          cat android/local.properties | sed 's/\(password\|PASSWORD\)=.*/\1=****/'
+      
+      # Build with release configuration
       - name: Build Android App
         run: |
           cd android
           ./gradlew assembleRelease --info
       
-      # Upload APK as artifact for download
+      # Upload APK as artifact for download with date in name
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Vega-Release-APK-$(date +'%Y-%m-%d')
+          name: Vega-Release-APK-$(date +'%Y%m%d')
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
-      
-      # Print information about the generated APK
-      - name: APK Info
-        run: |
-          echo "APK generated at: $(date +'%Y-%m-%d %H:%M:%S')"
-          echo "Built from branch: ${{ github.event.inputs.branch || 'main' }}"
-          ls -la android/app/build/outputs/apk/release/
-          
-          # Display signing info (if possible)
-          if [ -f "$(find android/app/build/outputs/apk/release -name '*.apk' | head -1)" ]; then
-            echo "APK found. Checking signature..."
-            APK_PATH=$(find android/app/build/outputs/apk/release -name '*.apk' | head -1)
-            echo "APK path: $APK_PATH"
-            
-            # Use zipinfo to check if the APK is signed (look for META-INF/*.RSA)
-            zipinfo -1 "$APK_PATH" | grep -i "META-INF/.*\.RSA" || echo "No signature file found in APK"
-          else
-            echo "No APK found to analyze"
-          fi
