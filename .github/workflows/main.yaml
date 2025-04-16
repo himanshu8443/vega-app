@@ -1,0 +1,74 @@
+name: Nightly Build
+
+on:
+  schedule:
+    # Runs at 2:00 AM UTC
+    - cron: '0 2 * * *'
+  # Optional: Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build'
+        required: true
+        default: 'main'
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    # This ensures the workflow only runs on the specified branch for scheduled runs
+    if: github.event_name != 'schedule' || github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout specific branch
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.inputs.branch || 'main' }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18.x'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '11'
+
+      # Decode keystore
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore.jks
+
+      # Create keystore.properties
+      - name: Create keystore.properties
+        run: |
+          echo "storeFile=keystore.jks" > android/keystore.properties
+          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> android/keystore.properties
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/keystore.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/keystore.properties
+
+      # Build with signing config
+      - name: Build Android App
+        run: |
+          cd android
+          ./gradlew assembleRelease
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: app-release
+          path: android/app/build/outputs/apk/release/app-release.apk
+
+      # Distribution step (example using App Center)
+      - name: Upload to App Center
+        uses: wzieba/AppCenter-Github-Action@v1
+        with:
+          appName: ${{ secrets.APPCENTER_APP_NAME }}
+          token: ${{ secrets.APPCENTER_API_TOKEN }}
+          group: Testers
+          file: android/app/build/outputs/apk/release/app-release.apk
+          notifyTesters: true
