@@ -84,18 +84,16 @@ jobs:
       # Find and identify the APKs
       - name: Identify APKs
         run: |
-          mkdir -p artifacts
-          
           # Get app version from build.gradle
           VERSION=$(grep -m 1 "versionName " android/app/build.gradle | sed 's/.*versionName "\(.*\)".*/\1/')
           echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
           
-          # Find all APKs and copy them to artifacts directory
+          # Create directories for each APK type
+          mkdir -p universal armv7 armv8
+          
+          # Find all APKs and log them
           echo "Finding APKs:"
           find android/app/build/outputs/apk/release -name "*.apk" -not -name "*unsigned*"
-          
-          # Copy APKs with identifiable names
-          cp android/app/build/outputs/apk/release/Vega-*-v*.apk artifacts/ || echo "No renamed APKs found"
           
           # Define variables for each APK type
           UNIVERSAL_APK=$(find android/app/build/outputs/apk/release -name "*universal*.apk" -not -name "*unsigned*" | head -1)
@@ -103,29 +101,57 @@ jobs:
           ARMV8_APK=$(find android/app/build/outputs/apk/release -name "*arm64-v8a*.apk" -not -name "*unsigned*" | head -1)
           
           if [ -f "$UNIVERSAL_APK" ]; then
-            cp "$UNIVERSAL_APK" artifacts/Vega-v${VERSION}-universal-${{ env.BUILD_DATE }}.apk
+            cp "$UNIVERSAL_APK" universal/Vega-v${VERSION}-universal-${{ env.BUILD_DATE }}.apk
             echo "UNIVERSAL_APK_NAME=Vega-v${VERSION}-universal-${{ env.BUILD_DATE }}.apk" >> $GITHUB_ENV
+            echo "UNIVERSAL_APK_FOUND=true" >> $GITHUB_ENV
+          else
+            echo "Universal APK not found"
+            echo "UNIVERSAL_APK_FOUND=false" >> $GITHUB_ENV
           fi
           
           if [ -f "$ARMV7_APK" ]; then
-            cp "$ARMV7_APK" artifacts/Vega-v${VERSION}-armv7-${{ env.BUILD_DATE }}.apk
+            cp "$ARMV7_APK" armv7/Vega-v${VERSION}-armv7-${{ env.BUILD_DATE }}.apk
             echo "ARMV7_APK_NAME=Vega-v${VERSION}-armv7-${{ env.BUILD_DATE }}.apk" >> $GITHUB_ENV
+            echo "ARMV7_APK_FOUND=true" >> $GITHUB_ENV
+          else
+            echo "ARMv7 APK not found"
+            echo "ARMV7_APK_FOUND=false" >> $GITHUB_ENV
           fi
           
           if [ -f "$ARMV8_APK" ]; then
-            cp "$ARMV8_APK" artifacts/Vega-v${VERSION}-armv8-${{ env.BUILD_DATE }}.apk
+            cp "$ARMV8_APK" armv8/Vega-v${VERSION}-armv8-${{ env.BUILD_DATE }}.apk
             echo "ARMV8_APK_NAME=Vega-v${VERSION}-armv8-${{ env.BUILD_DATE }}.apk" >> $GITHUB_ENV
+            echo "ARMV8_APK_FOUND=true" >> $GITHUB_ENV
+          else
+            echo "ARMv8 APK not found"
+            echo "ARMV8_APK_FOUND=false" >> $GITHUB_ENV
           fi
-          
-          echo "APKs in artifacts directory:"
-          ls -la artifacts/
       
-      # Upload APKs as artifacts
-      - name: Upload APK artifacts
+      # Upload Universal APK as separate artifact
+      - name: Upload Universal APK artifact
+        if: env.UNIVERSAL_APK_FOUND == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: Vega-v${{ env.APP_VERSION }}-${{ env.BUILD_DATE }}
-          path: artifacts/*.apk
+          name: Vega-v${{ env.APP_VERSION }}-Universal-${{ env.BUILD_DATE }}
+          path: universal/*.apk
+          if-no-files-found: warn
+      
+      # Upload ARMv7 APK as separate artifact
+      - name: Upload ARMv7 APK artifact
+        if: env.ARMV7_APK_FOUND == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vega-v${{ env.APP_VERSION }}-ARMv7-${{ env.BUILD_DATE }}
+          path: armv7/*.apk
+          if-no-files-found: warn
+      
+      # Upload ARMv8 APK as separate artifact
+      - name: Upload ARMv8 APK artifact
+        if: env.ARMV8_APK_FOUND == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vega-v${{ env.APP_VERSION }}-ARMv8-${{ env.BUILD_DATE }}
+          path: armv8/*.apk
           if-no-files-found: warn
       
       # Create and run a dedicated Discord notification script
@@ -175,7 +201,12 @@ jobs:
                   },
                   {
                     "name": "Download APKs",
-                    "value": "[▶️ **Download All APKs**](${ARTIFACTS_URL})\n\n• [📱 Universal APK](${ARTIFACTS_URL})\n• [📱 ARMv7 APK](${ARTIFACTS_URL})\n• [📱 ARMv8 APK](${ARTIFACTS_URL})",
+                    "value": "Click the links below to download. Each link will download a ZIP file containing the APK.\n\n[📱 **Universal APK**](${ARTIFACTS_URL}?name=Vega-v${APP_VERSION}-Universal-${BUILD_DATE})\n[📱 **ARMv7 APK**](${ARTIFACTS_URL}?name=Vega-v${APP_VERSION}-ARMv7-${BUILD_DATE}) (For older devices)\n[📱 **ARMv8 APK**](${ARTIFACTS_URL}?name=Vega-v${APP_VERSION}-ARMv8-${BUILD_DATE}) (For newer devices)",
+                    "inline": false
+                  },
+                  {
+                    "name": "Installation Instructions",
+                    "value": "1. Download the appropriate APK ZIP file for your device\n2. Extract the ZIP file to get the APK\n3. Install the APK on your device",
                     "inline": false
                   }
                 ],
