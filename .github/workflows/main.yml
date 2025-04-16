@@ -39,22 +39,41 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
       
-      # Decode keystore
+      # Decode keystore directly to the app directory
       - name: Decode keystore
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore.jks
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore
       
-      # Create keystore.properties
-      - name: Create keystore.properties
+      # Now we'll directly modify the build.gradle file to reference our keystore
+      - name: Update build.gradle with signing config
         run: |
-          echo "storeFile=keystore.jks" > android/keystore.properties
-          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> android/keystore.properties
-          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/keystore.properties
-          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/keystore.properties
+          # Create a temporary file for the modified build.gradle
+          cat android/app/build.gradle | sed '/signingConfigs {/,/}/d' > temp_build.gradle
+          
+          # Insert our signing config block
+          echo 'android {
+              signingConfigs {
+                  release {
+                      storeFile file("release.keystore")
+                      storePassword "${{ secrets.KEYSTORE_PASSWORD }}"
+                      keyAlias "${{ secrets.KEY_ALIAS }}"
+                      keyPassword "${{ secrets.KEY_PASSWORD }}"
+                  }
+              }
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                  }
+              }
+          }' | cat - temp_build.gradle > android/app/build.gradle
       
       # Add permission to gradlew
       - name: Make gradlew executable
         run: chmod +x android/gradlew
+      
+      # Print build.gradle to verify our changes
+      - name: Verify build.gradle changes
+        run: cat android/app/build.gradle
       
       # Build with signing config
       - name: Build Android App
