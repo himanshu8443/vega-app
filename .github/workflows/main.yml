@@ -51,6 +51,10 @@ jobs:
           echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/keystore.properties
           echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/keystore.properties
       
+      # Add permission to gradlew
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+      
       # Build with signing config
       - name: Build Android App
         run: |
