@@ -75,11 +75,11 @@ jobs:
           echo "Keystore details:"
           keytool -list -v -keystore android/app/release.keystore -storepass "${{ secrets.KEYSTORE_PASSWORD }}" | head -20
       
-      # Build with release configuration and verbose logging
+      # Build with release configuration and stacktrace only (no debug)
       - name: Build Android App
         run: |
           cd android
-          ./gradlew assembleRelease --stacktrace --debug
+          ./gradlew assembleRelease --stacktrace
       
       # Upload APK as artifact for download with date in name
       - name: Upload APK artifact
