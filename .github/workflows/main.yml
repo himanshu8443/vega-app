@@ -140,7 +140,7 @@ jobs:
           curl -sL https://appwrite.io/cli/install.sh | bash
           appwrite --version
       
-      # Upload APKs to Appwrite storage
+      # Upload APKs to Appwrite storage with fixed permissions
       - name: Upload APKs to Appwrite
         run: |
           # Configure Appwrite CLI with correct parameters
@@ -153,12 +153,12 @@ jobs:
             
             echo "Uploading $FILE_NAME to Appwrite bucket ${{ secrets.APPWRITE_BUCKET_ID }}..."
             
-            # Upload file with correct command based on the docs (removed --output parameter)
+            # Upload file with correct permission format (fixed)
             RESPONSE=$(appwrite storage create-file \
               --bucket-id "${{ secrets.APPWRITE_BUCKET_ID }}" \
               --file-id "unique()" \
               --file "$FILE_PATH" \
-              --permissions '["read:any"]')
+              --permissions "read")
             
             # Extract file ID from the response
             # First check if the response contains an ID pattern
