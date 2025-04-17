@@ -19,6 +19,10 @@ jobs:
     environment: nightly
     # This ensures the workflow only runs on the specified branch for scheduled runs
     if: github.event_name != 'schedule' || github.ref == 'refs/heads/main'
+    permissions:
+      # Need these permissions for creating GitHub releases
+      contents: write
+      
     steps:
       - name: Checkout specific branch
         uses: actions/checkout@v4
@@ -83,6 +87,7 @@ jobs:
       
       # Find and identify the APKs
       - name: Identify APKs
+        id: apk_files
         run: |
           # Get app version from build.gradle
           VERSION=$(grep -m 1 "versionName " android/app/build.gradle | sed 's/.*versionName "\(.*\)".*/\1/')
@@ -100,185 +105,147 @@ jobs:
           ARMV7_APK=$(find android/app/build/outputs/apk/release -name "*armeabi-v7a*.apk" -not -name "*unsigned*" | head -1)
           ARMV8_APK=$(find android/app/build/outputs/apk/release -name "*arm64-v8a*.apk" -not -name "*unsigned*" | head -1)
           
+          # Create a comma-separated list of APK paths for the release step
+          APK_PATHS=""
+          
           # Set the file paths with clean names
           if [ -f "$UNIVERSAL_APK" ]; then
-            UNIVERSAL_APK_NAME="Vega-v${VERSION}-universal-${BUILD_DATE}.apk"
+            UNIVERSAL_APK_NAME="Vega-nightly-v${VERSION}-universal-${BUILD_DATE}.apk"
             cp "$UNIVERSAL_APK" "apks/${UNIVERSAL_APK_NAME}"
             echo "UNIVERSAL_APK_NAME=${UNIVERSAL_APK_NAME}" >> $GITHUB_ENV
             echo "UNIVERSAL_APK_FOUND=true" >> $GITHUB_ENV
+            APK_PATHS="${APK_PATHS}apks/${UNIVERSAL_APK_NAME},"
           else
             echo "Universal APK not found"
             echo "UNIVERSAL_APK_FOUND=false" >> $GITHUB_ENV
           fi
           
           if [ -f "$ARMV7_APK" ]; then
-            ARMV7_APK_NAME="Vega-v${VERSION}-armv7-${BUILD_DATE}.apk"
+            ARMV7_APK_NAME="Vega-nightly-v${VERSION}-armv7-${BUILD_DATE}.apk"
             cp "$ARMV7_APK" "apks/${ARMV7_APK_NAME}"
             echo "ARMV7_APK_NAME=${ARMV7_APK_NAME}" >> $GITHUB_ENV
             echo "ARMV7_APK_FOUND=true" >> $GITHUB_ENV
+            APK_PATHS="${APK_PATHS}apks/${ARMV7_APK_NAME},"
           else
             echo "ARMv7 APK not found"
             echo "ARMV7_APK_FOUND=false" >> $GITHUB_ENV
           fi
           
           if [ -f "$ARMV8_APK" ]; then
-            ARMV8_APK_NAME="Vega-v${VERSION}-armv8-${BUILD_DATE}.apk"
+            ARMV8_APK_NAME="Vega-nightly-v${VERSION}-armv8-${BUILD_DATE}.apk"
             cp "$ARMV8_APK" "apks/${ARMV8_APK_NAME}"
             echo "ARMV8_APK_NAME=${ARMV8_APK_NAME}" >> $GITHUB_ENV
             echo "ARMV8_APK_FOUND=true" >> $GITHUB_ENV
+            APK_PATHS="${APK_PATHS}apks/${ARMV8_APK_NAME},"
           else
             echo "ARMv8 APK not found"
             echo "ARMV8_APK_FOUND=false" >> $GITHUB_ENV
           fi
           
-          echo "APKs prepared for upload:"
+          # Remove trailing comma if any
+          APK_PATHS=$(echo $APK_PATHS | sed 's/,$//')
+          echo "apk_paths=${APK_PATHS}" >> $GITHUB_OUTPUT
+          
+          echo "APKs prepared for GitHub Release:"
           ls -la apks/
+          
+          # Create a tag name for the release
+          NIGHTLY_DATE=$(date -u '+%Y%m%d')
+          RELEASE_TAG="nightly-${NIGHTLY_DATE}"
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_ENV
+          
+          # Auto-delete the previous nightly release if it exists
+          echo "PREVIOUS_DATE=$(date -u -d 'yesterday' '+%Y%m%d')" >> $GITHUB_ENV
       
-      # Install Appwrite CLI
-      - name: Install Appwrite CLI
+      # Delete previous nightly release if it exists (to keep releases clean)
+      - name: Delete previous nightly release
         run: |
-          curl -sL https://appwrite.io/cli/install.sh | bash
-          appwrite --version
+          # Try to delete previous tag - if it doesn't exist, that's fine
+          git tag -d nightly-${{ env.PREVIOUS_DATE }} 2>/dev/null || true
+          git push --delete origin nightly-${{ env.PREVIOUS_DATE }} 2>/dev/null || true
+          
+          # Also delete previous release with the same tag if it exists
+          PREVIOUS_RELEASE_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/nightly-${{ env.PREVIOUS_DATE }}" | \
+            grep -o '"id": [0-9]*' | head -1 | sed 's/"id": //')
+          
+          if [ -n "$PREVIOUS_RELEASE_ID" ] && [ "$PREVIOUS_RELEASE_ID" != "null" ]; then
+            echo "Deleting previous nightly release with ID: $PREVIOUS_RELEASE_ID"
+            curl -s -X DELETE -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/$PREVIOUS_RELEASE_ID"
+          else
+            echo "No previous nightly release found to delete"
+          fi
       
-      # Upload APKs to Appwrite storage without permissions parameter
-      - name: Upload APKs to Appwrite
-        run: |
-          # Configure Appwrite CLI
-          appwrite client --endpoint "${{ secrets.APPWRITE_ENDPOINT }}" --project-id "${{ secrets.APPWRITE_PROJECT_ID }}" --key "${{ secrets.APPWRITE_API_KEY }}"
-          
-          # Function to upload file and extract file ID - omitting the permissions parameter
-          upload_to_appwrite() {
-            local FILE_PATH=$1
-            local FILE_NAME=$(basename "$FILE_PATH")
+      # Create a dedicated GitHub Release just for nightly builds
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: "🌙 Nightly Build v${{ env.APP_VERSION }} (${{ env.BUILD_DATE }})"
+          body: |
+            ## 🌙 Vega Nightly Build
             
-            echo "Uploading $FILE_NAME to Appwrite bucket ${{ secrets.APPWRITE_BUCKET_ID }}..."
+            > ⚠️ **NIGHTLY BUILD WARNING** ⚠️  
+            > This is an automated nightly build and may contain bugs or incomplete features.
+            > Not recommended for production use.
             
-            # Try without any permissions parameter
-            RESPONSE=$(appwrite storage create-file \
-              --bucket-id "${{ secrets.APPWRITE_BUCKET_ID }}" \
-              --file-id "unique()" \
-              --file "$FILE_PATH")
+            **Version:** v${{ env.APP_VERSION }}
+            **Build Date:** ${{ env.BUILD_DATE }}
+            **Commit:** [${{ env.COMMIT_HASH }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }}) by ${{ env.COMMIT_AUTHOR }}
+            **Commit Message:** ${{ env.COMMIT_MSG }}
             
-            # Extract file ID from the response
-            if echo "$RESPONSE" | grep -q '"$id":'; then
-              # Extract file ID
-              FILE_ID=$(echo "$RESPONSE" | grep -o '"$id":"[^"]*"' | cut -d':' -f2 | tr -d '"')
-              
-              if [ -n "$FILE_ID" ]; then
-                echo "Uploaded $FILE_NAME with ID: $FILE_ID"
-                
-                # Generate download URL
-                DOWNLOAD_URL="${{ secrets.APPWRITE_ENDPOINT }}/storage/buckets/${{ secrets.APPWRITE_BUCKET_ID }}/files/$FILE_ID/download"
-                
-                # Create variables for Discord notification
-                if [[ "$FILE_NAME" == *"universal"* ]]; then
-                  echo "UNIVERSAL_DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
-                elif [[ "$FILE_NAME" == *"armv7"* ]]; then
-                  echo "ARMV7_DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
-                elif [[ "$FILE_NAME" == *"armv8"* ]]; then
-                  echo "ARMV8_DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
-                fi
-                return 0
-              fi
-            fi
+            ### Download APKs
+            Choose the appropriate APK for your device:
             
-            echo "Failed to upload $FILE_NAME to Appwrite. Response: $RESPONSE"
-            return 1
-          }
-          
-          # Alternative function if the first doesn't work - tries with REST API directly
-          upload_with_curl() {
-            local FILE_PATH=$1
-            local FILE_NAME=$(basename "$FILE_PATH")
+            - **Universal APK:** Works on all devices (largest file size)
+            - **ARMv8 APK:** For most modern phones (last 5+ years)
+            - **ARMv7 APK:** For older devices only
             
-            echo "Trying direct API upload for $FILE_NAME to Appwrite bucket ${{ secrets.APPWRITE_BUCKET_ID }}..."
-            
-            # Generate a unique ID
-            UNIQUE_ID="$(date +%s)-$(openssl rand -hex 8)"
-            
-            # Upload using curl with multipart form data
-            RESPONSE=$(curl -X POST \
-              "${{ secrets.APPWRITE_ENDPOINT }}/storage/buckets/${{ secrets.APPWRITE_BUCKET_ID }}/files" \
-              -H "X-Appwrite-Project: ${{ secrets.APPWRITE_PROJECT_ID }}" \
-              -H "X-Appwrite-Key: ${{ secrets.APPWRITE_API_KEY }}" \
-              -F "fileId=$UNIQUE_ID" \
-              -F "file=@$FILE_PATH")
-            
-            # Extract file ID from response
-            if echo "$RESPONSE" | grep -q '"$id":'; then
-              FILE_ID=$(echo "$RESPONSE" | grep -o '"$id":"[^"]*"' | cut -d':' -f2 | tr -d '"')
-              
-              if [ -n "$FILE_ID" ]; then
-                echo "Uploaded $FILE_NAME with ID: $FILE_ID using direct API"
-                
-                # Generate download URL
-                DOWNLOAD_URL="${{ secrets.APPWRITE_ENDPOINT }}/storage/buckets/${{ secrets.APPWRITE_BUCKET_ID }}/files/$FILE_ID/download"
-                
-                # Create variables for Discord notification
-                if [[ "$FILE_NAME" == *"universal"* ]]; then
-                  echo "UNIVERSAL_DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
-                elif [[ "$FILE_NAME" == *"armv7"* ]]; then
-                  echo "ARMV7_DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
-                elif [[ "$FILE_NAME" == *"armv8"* ]]; then
-                  echo "ARMV8_DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
-                fi
-                return 0
-              fi
-            fi
-            
-            echo "Failed to upload $FILE_NAME with direct API. Response: $RESPONSE"
-            return 1
-          }
-          
-          # Try to upload using CLI first, if that fails try the direct API approach
-          upload_with_fallback() {
-            local FILE_PATH=$1
-            
-            # Try CLI first
-            if upload_to_appwrite "$FILE_PATH"; then
-              return 0
-            fi
-            
-            echo "CLI upload failed, trying direct API..."
-            if upload_with_curl "$FILE_PATH"; then
-              return 0
-            fi
-            
-            echo "All upload methods failed for $FILE_PATH"
-            return 1
-          }
-          
-          # Upload each APK type if it exists
-          if [ "$UNIVERSAL_APK_FOUND" = "true" ]; then
-            upload_with_fallback "apks/$UNIVERSAL_APK_NAME"
-          fi
-          
-          if [ "$ARMV7_APK_FOUND" = "true" ]; then
-            upload_with_fallback "apks/$ARMV7_APK_NAME"
-          fi
-          
-          if [ "$ARMV8_APK_FOUND" = "true" ]; then
-            upload_with_fallback "apks/$ARMV8_APK_NAME"
-          fi
+            ### Previous Builds
+            This nightly release replaces the previous day's build. If you need an older build, please check the workflow run history.
+          files: ${{ steps.apk_files.outputs.apk_paths }}
+          draft: false
+          prerelease: true
       
       # Also upload APKs as GitHub artifacts as backup
       - name: Upload APKs as GitHub artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Vega-v${{ env.APP_VERSION }}-APKs-${{ env.BUILD_DATE }}
+          name: Vega-Nightly-v${{ env.APP_VERSION }}-${{ env.BUILD_DATE }}
           path: apks/*.apk
           if-no-files-found: warn
       
       # Create and run a dedicated Discord notification script with direct download links
       - name: Create Discord notification script
         run: |
+          # Get release URL and build download URLs for each APK
+          RELEASE_URL="${{ steps.create_release.outputs.url }}"
+          RELEASE_HTML_URL="$(echo $RELEASE_URL | sed 's/api\.github\.com\/repos/github.com/')"
+          
+          if [ "$UNIVERSAL_APK_FOUND" = "true" ]; then
+            UNIVERSAL_DOWNLOAD_URL="$RELEASE_HTML_URL/download/$UNIVERSAL_APK_NAME"
+            echo "UNIVERSAL_DOWNLOAD_URL=$UNIVERSAL_DOWNLOAD_URL" >> $GITHUB_ENV
+          fi
+          
+          if [ "$ARMV7_APK_FOUND" = "true" ]; then
+            ARMV7_DOWNLOAD_URL="$RELEASE_HTML_URL/download/$ARMV7_APK_NAME"
+            echo "ARMV7_DOWNLOAD_URL=$ARMV7_DOWNLOAD_URL" >> $GITHUB_ENV
+          fi
+          
+          if [ "$ARMV8_APK_FOUND" = "true" ]; then
+            ARMV8_DOWNLOAD_URL="$RELEASE_HTML_URL/download/$ARMV8_APK_NAME"
+            echo "ARMV8_DOWNLOAD_URL=$ARMV8_DOWNLOAD_URL" >> $GITHUB_ENV
+          fi
+          
           cat > send_discord.sh << 'EOF'
           #!/bin/bash
 
           # Get environment variables
           REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
-          WORKFLOW_URL="${REPO_URL}/actions/runs/${GITHUB_RUN_ID}"
           COMMIT_URL="${REPO_URL}/commit/${GITHUB_SHA}"
+          RELEASE_URL="${REPO_URL}/releases/tag/${RELEASE_TAG}"
 
           # Format the commit message (escape quotes for JSON)
           FORMATTED_COMMIT_MSG=$(echo "$COMMIT_MSG" | head -n 1 | sed 's/"/\\"/g')
@@ -299,10 +266,8 @@ jobs:
             DOWNLOAD_SECTION="${DOWNLOAD_SECTION}• [📱 **ARMv8 APK**](${ARMV8_DOWNLOAD_URL}) - For newer Android devices (recommended)\n"
           fi
           
-          # If no download links available, use a fallback message
-          if [ -z "$DOWNLOAD_SECTION" ]; then
-            DOWNLOAD_SECTION="No download links available. Please check the [workflow run](${WORKFLOW_URL}) for more information."
-          fi
+          # Add link to all downloads
+          DOWNLOAD_SECTION="${DOWNLOAD_SECTION}\n[View all downloads on GitHub](${RELEASE_URL})"
 
           # Create the JSON payload
           cat > discord_payload.json << EOJSON
@@ -345,7 +310,7 @@ jobs:
                   }
                 ],
                 "footer": {
-                  "text": "Built by himanshu8443 • Vega App"
+                  "text": "⚠️ Nightly build - may contain bugs • Built by himanshu8443"
                 },
                 "timestamp": "${CURRENT_TIMESTAMP}"
               }
