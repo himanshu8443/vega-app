@@ -140,29 +140,26 @@ jobs:
           curl -sL https://appwrite.io/cli/install.sh | bash
           appwrite --version
       
-      # Upload APKs to Appwrite storage with fixed permissions
+      # Upload APKs to Appwrite storage without permissions parameter
       - name: Upload APKs to Appwrite
         run: |
-          # Configure Appwrite CLI with correct parameters
+          # Configure Appwrite CLI
           appwrite client --endpoint "${{ secrets.APPWRITE_ENDPOINT }}" --project-id "${{ secrets.APPWRITE_PROJECT_ID }}" --key "${{ secrets.APPWRITE_API_KEY }}"
           
-          # Function to upload file and extract file ID
+          # Function to upload file and extract file ID - omitting the permissions parameter
           upload_to_appwrite() {
             local FILE_PATH=$1
             local FILE_NAME=$(basename "$FILE_PATH")
             
             echo "Uploading $FILE_NAME to Appwrite bucket ${{ secrets.APPWRITE_BUCKET_ID }}..."
             
-            # Upload file with correct permission format (updated again)
-            # Try with array format for permissions
+            # Try without any permissions parameter
             RESPONSE=$(appwrite storage create-file \
               --bucket-id "${{ secrets.APPWRITE_BUCKET_ID }}" \
               --file-id "unique()" \
-              --file "$FILE_PATH" \
-              --permissions '["read"]')
+              --file "$FILE_PATH")
             
             # Extract file ID from the response
-            # First check if the response contains an ID pattern
             if echo "$RESPONSE" | grep -q '"$id":'; then
               # Extract file ID
               FILE_ID=$(echo "$RESPONSE" | grep -o '"$id":"[^"]*"' | cut -d':' -f2 | tr -d '"')
@@ -173,11 +170,7 @@ jobs:
                 # Generate download URL
                 DOWNLOAD_URL="${{ secrets.APPWRITE_ENDPOINT }}/storage/buckets/${{ secrets.APPWRITE_BUCKET_ID }}/files/$FILE_ID/download"
                 
-                # Create a variable with a unique name for each file
-                CLEAN_NAME=$(echo "$FILE_NAME" | sed 's/[^a-zA-Z0-9]/_/g')
-                echo "${CLEAN_NAME}_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
-                
-                # Create a simpler variable name for the Discord notification
+                # Create variables for Discord notification
                 if [[ "$FILE_NAME" == *"universal"* ]]; then
                   echo "UNIVERSAL_DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
                 elif [[ "$FILE_NAME" == *"armv7"* ]]; then
@@ -193,17 +186,79 @@ jobs:
             return 1
           }
           
+          # Alternative function if the first doesn't work - tries with REST API directly
+          upload_with_curl() {
+            local FILE_PATH=$1
+            local FILE_NAME=$(basename "$FILE_PATH")
+            
+            echo "Trying direct API upload for $FILE_NAME to Appwrite bucket ${{ secrets.APPWRITE_BUCKET_ID }}..."
+            
+            # Generate a unique ID
+            UNIQUE_ID="$(date +%s)-$(openssl rand -hex 8)"
+            
+            # Upload using curl with multipart form data
+            RESPONSE=$(curl -X POST \
+              "${{ secrets.APPWRITE_ENDPOINT }}/storage/buckets/${{ secrets.APPWRITE_BUCKET_ID }}/files" \
+              -H "X-Appwrite-Project: ${{ secrets.APPWRITE_PROJECT_ID }}" \
+              -H "X-Appwrite-Key: ${{ secrets.APPWRITE_API_KEY }}" \
+              -F "fileId=$UNIQUE_ID" \
+              -F "file=@$FILE_PATH")
+            
+            # Extract file ID from response
+            if echo "$RESPONSE" | grep -q '"$id":'; then
+              FILE_ID=$(echo "$RESPONSE" | grep -o '"$id":"[^"]*"' | cut -d':' -f2 | tr -d '"')
+              
+              if [ -n "$FILE_ID" ]; then
+                echo "Uploaded $FILE_NAME with ID: $FILE_ID using direct API"
+                
+                # Generate download URL
+                DOWNLOAD_URL="${{ secrets.APPWRITE_ENDPOINT }}/storage/buckets/${{ secrets.APPWRITE_BUCKET_ID }}/files/$FILE_ID/download"
+                
+                # Create variables for Discord notification
+                if [[ "$FILE_NAME" == *"universal"* ]]; then
+                  echo "UNIVERSAL_DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
+                elif [[ "$FILE_NAME" == *"armv7"* ]]; then
+                  echo "ARMV7_DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
+                elif [[ "$FILE_NAME" == *"armv8"* ]]; then
+                  echo "ARMV8_DOWNLOAD_URL=$DOWNLOAD_URL" >> $GITHUB_ENV
+                fi
+                return 0
+              fi
+            fi
+            
+            echo "Failed to upload $FILE_NAME with direct API. Response: $RESPONSE"
+            return 1
+          }
+          
+          # Try to upload using CLI first, if that fails try the direct API approach
+          upload_with_fallback() {
+            local FILE_PATH=$1
+            
+            # Try CLI first
+            if upload_to_appwrite "$FILE_PATH"; then
+              return 0
+            fi
+            
+            echo "CLI upload failed, trying direct API..."
+            if upload_with_curl "$FILE_PATH"; then
+              return 0
+            fi
+            
+            echo "All upload methods failed for $FILE_PATH"
+            return 1
+          }
+          
           # Upload each APK type if it exists
           if [ "$UNIVERSAL_APK_FOUND" = "true" ]; then
-            upload_to_appwrite "apks/$UNIVERSAL_APK_NAME"
+            upload_with_fallback "apks/$UNIVERSAL_APK_NAME"
           fi
           
           if [ "$ARMV7_APK_FOUND" = "true" ]; then
-            upload_to_appwrite "apks/$ARMV7_APK_NAME"
+            upload_with_fallback "apks/$ARMV7_APK_NAME"
           fi
           
           if [ "$ARMV8_APK_FOUND" = "true" ]; then
-            upload_to_appwrite "apks/$ARMV8_APK_NAME"
+            upload_with_fallback "apks/$ARMV8_APK_NAME"
           fi
       
       # Also upload APKs as GitHub artifacts as backup
