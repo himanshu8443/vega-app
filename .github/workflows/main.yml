@@ -2,8 +2,8 @@ name: Nightly Build
 
 on:
   schedule:
-    # Runs at 2:00 AM UTC
-    - cron: '0 2 * * *'
+    # Runs at 12:00 AM India time (18:30 UTC of previous day)
+    - cron: '30 18 * * *'
   # Optional: Allow manual trigger
   workflow_dispatch:
     inputs:
@@ -13,12 +13,47 @@ on:
         default: 'main'
 
 jobs:
+  check_for_changes:
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.check_changes.outputs.has_changes }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Check for new commits
+        id: check_changes
+        run: |
+          git fetch --tags
+          
+          # Get the latest nightly tag if it exists
+          LATEST_NIGHTLY_TAG=$(git tag -l "nightly-*" | sort -r | head -n 1 || echo "")
+          
+          if [ -z "$LATEST_NIGHTLY_TAG" ]; then
+            # No previous nightly tag, so we should build
+            echo "No previous nightly build found. Proceeding with build."
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            # Check if there are new commits since the last nightly tag
+            COMMIT_COUNT=$(git rev-list --count $LATEST_NIGHTLY_TAG..HEAD)
+            
+            if [ "$COMMIT_COUNT" -gt 0 ]; then
+              echo "Found $COMMIT_COUNT new commits since last nightly build. Proceeding with build."
+              echo "has_changes=true" >> $GITHUB_OUTPUT
+            else
+              echo "No new commits since last nightly build. Skipping build."
+              echo "has_changes=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
   build-android:
+    needs: check_for_changes
+    if: ${{ needs.check_for_changes.outputs.has_changes == 'true' }}
     runs-on: ubuntu-latest
     # Use the nightly environment with the required secrets
     environment: nightly
-    # This ensures the workflow only runs on the specified branch for scheduled runs
-    if: github.event_name != 'schedule' || github.ref == 'refs/heads/main'
     permissions:
       # Need these permissions for creating GitHub releases
       contents: write
@@ -153,28 +188,37 @@ jobs:
           NIGHTLY_DATE=$(date -u '+%Y%m%d')
           RELEASE_TAG="nightly-${NIGHTLY_DATE}"
           echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_ENV
-          
-          # Auto-delete the previous nightly release if it exists
-          echo "PREVIOUS_DATE=$(date -u -d 'yesterday' '+%Y%m%d')" >> $GITHUB_ENV
       
-      # Delete previous nightly release if it exists (to keep releases clean)
-      - name: Delete previous nightly release
+      # Delete ALL previous nightly releases (not just yesterday's)
+      - name: Delete All Previous Nightly Releases
         run: |
-          # Try to delete previous tag - if it doesn't exist, that's fine
-          git tag -d nightly-${{ env.PREVIOUS_DATE }} 2>/dev/null || true
-          git push --delete origin nightly-${{ env.PREVIOUS_DATE }} 2>/dev/null || true
+          # Fetch all tags
+          git fetch --tags
           
-          # Also delete previous release with the same tag if it exists
-          PREVIOUS_RELEASE_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/nightly-${{ env.PREVIOUS_DATE }}" | \
-            grep -o '"id": [0-9]*' | head -1 | sed 's/"id": //')
+          # List all nightly tags and delete them
+          NIGHTLY_TAGS=$(git tag -l "nightly-*" || echo "")
           
-          if [ -n "$PREVIOUS_RELEASE_ID" ] && [ "$PREVIOUS_RELEASE_ID" != "null" ]; then
-            echo "Deleting previous nightly release with ID: $PREVIOUS_RELEASE_ID"
-            curl -s -X DELETE -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              "https://api.github.com/repos/${{ github.repository }}/releases/$PREVIOUS_RELEASE_ID"
+          if [ -n "$NIGHTLY_TAGS" ]; then
+            echo "Found previous nightly tags: $NIGHTLY_TAGS"
+            
+            for TAG in $NIGHTLY_TAGS; do
+              echo "Deleting tag: $TAG"
+              git tag -d $TAG 2>/dev/null || true
+              git push --delete origin $TAG 2>/dev/null || true
+              
+              # Also delete the release via API
+              RELEASE_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG" | \
+                grep -o '"id": [0-9]*' | head -1 | sed 's/"id": //')
+              
+              if [ -n "$RELEASE_ID" ] && [ "$RELEASE_ID" != "null" ]; then
+                echo "Deleting release with ID: $RELEASE_ID"
+                curl -s -X DELETE -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                  "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID"
+              fi
+            done
           else
-            echo "No previous nightly release found to delete"
+            echo "No previous nightly tags found"
           fi
       
       # Create a dedicated GitHub Release just for nightly builds
@@ -202,9 +246,6 @@ jobs:
             - **Universal APK:** Works on all devices (largest file size)
             - **ARMv8 APK:** For most modern phones (last 5+ years)
             - **ARMv7 APK:** For older devices only
-            
-            ### Previous Builds
-            This nightly release replaces the previous day's build. If you need an older build, please check the workflow run history.
           files: ${{ steps.apk_files.outputs.apk_paths }}
           draft: false
           prerelease: true
