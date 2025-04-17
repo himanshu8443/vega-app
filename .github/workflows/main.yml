@@ -153,12 +153,13 @@ jobs:
             
             echo "Uploading $FILE_NAME to Appwrite bucket ${{ secrets.APPWRITE_BUCKET_ID }}..."
             
-            # Upload file with correct permission format (fixed)
+            # Upload file with correct permission format (updated again)
+            # Try with array format for permissions
             RESPONSE=$(appwrite storage create-file \
               --bucket-id "${{ secrets.APPWRITE_BUCKET_ID }}" \
               --file-id "unique()" \
               --file "$FILE_PATH" \
-              --permissions "read")
+              --permissions '["read"]')
             
             # Extract file ID from the response
             # First check if the response contains an ID pattern
