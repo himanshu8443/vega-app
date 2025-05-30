@@ -20,4 +20,20 @@ buildscript {
     }
 }
 
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        flatDir {
+            dirs "${rootProject.projectDir}/app/libs"
+        }
+    }
+    
+    configurations.all {
+        resolutionStrategy {
+            force 'com.arthenica:ffmpeg-kit-https-gpl:6.0-2'
+        }
+    }
+}
+
 apply plugin: "com.facebook.react.rootproject"
